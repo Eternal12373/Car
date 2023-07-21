@@ -441,11 +441,19 @@ uint8_t GetLine(void)
 }
 void tracing(void)
 {
-    uint8_t trace_num;
+    static uint8_t trace_num=0;
+    static uint8_t last_trace_num=0;
+
+    last_trace_num=trace_num;
     trace_num = GetLine();
+
     display_mode(trace_num);
-    switch (trace_num)
+    if(trace_num==15)
     {
+        trace_num=last_trace_num; //如果是全白，则重复上次的动作
+    }
+    switch (trace_num)
+    {       
     case 9:  //1001
         SetSpeed(100, 0, 0);
         break;
@@ -473,9 +481,6 @@ void tracing(void)
     case 4: //0100
         SetSpeed(30, 0, -1000);
         delay(800);
-        break;
-    case 15:
-        SetSpeed(100, 0, 0);
         break;
     default:
         SetSpeed(0, 0, 0);
