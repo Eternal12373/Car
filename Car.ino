@@ -5,7 +5,14 @@
 #include <Adafruit_SSD1306.h>
 #include <MPU6050_tockn.h>
 
-//#define STOP_DEBUG
+// #define STOP_DEBUG
+enum
+{
+    INIT_STATE, // 识别，串口通信，保存地图，
+    FOLLOW_LINE,
+};
+
+int robot_state = INIT_STATE;
 
 MPU6050 mpu6050(Wire);
 
@@ -70,6 +77,7 @@ String but_l;
 String but_r;
 
 uint8_t send_buff[20];
+uint8_t rx_buff[128];
 
 WiFiUDP Udp;
 
@@ -103,7 +111,7 @@ int UltrasonicDistence(void);
 uint8_t GetLine(void);
 /**
  * 陀螺仪
-*/
+ */
 void get_mpu6050(float *angleX, float *angleY, float *angleZ);
 void tracing(void);
 
@@ -113,25 +121,50 @@ long duration;
 float distance;
 
 /*
-  1 
+  1
 4   2
   3
 */
-uint8_t the_way_arr[128]={1,2,3,4}; //判断方向的数组
-int cross_cnt=0; //经过路口的数量，索引
+uint8_t the_way_arr[128] = {1, 2, 3, 4}; // 判断方向的数组
+int cross_cnt = 0;                       // 经过路口的数量，索引
 
-void serialEvent() {
-  while (Serial.available()) {
-    char incomingChar = Serial.read();
-    // 在这里处理接收到的数据
-  }
+int rx_cnt = 0;
+
+void serialEvent()
+{
+    int buff_num = 0;
+    Serial.printf("number is %d\n", Serial.available());
+    while (Serial.available())
+    {
+        buff_num++;
+        char incomingChar = Serial.read();
+        if (rx_cnt != 0)
+        {
+            rx_buff[rx_cnt - 1] = incomingChar;
+            rx_cnt++;
+        }
+        if (rx_cnt == 0)
+        {
+            if (incomingChar == 0x5f)
+            {
+                rx_cnt++;
+            }
+        }
+        // Serial.print(incomingChar);
+    }
+    Serial.printf("buff_num is %d,%d\n", 1, (int)buff_num);
 }
 
 void setup()
 {
+    for (int i = 0; i < 128; i++)
+    {
+        rx_buff[i] = 0;
+    }
+
     Serial.begin(9600);
     Wire.begin();
-
+#if 1
     delay(500);
     UltrasonicInit();
 
@@ -193,13 +226,33 @@ void setup()
     delay(500);
     digitalWrite(2, LOW);
     delay(500);
+#endif
 }
 
 void loop()
 {
+    delay(5);
 
-    static int err_cnt = 0;
-    delay(3);
+    switch (robot_state)
+    {
+    case INIT_STATE:
+
+        if (GetLine() != 15) //任意一个传感器检测到黑，启动
+        {
+            robot_state = FOLLOW_LINE;
+        }
+        break;
+
+    case FOLLOW_LINE:
+
+        tracing();
+        break;
+    }
+    // for (int i = 0; i < 128; i++)
+    // {
+    //     Serial.print(rx_buff[i]);
+    // }
+
     //    mpu6050.update();
     //   Serial.print("angleX : ");
     //   Serial.print(mpu6050.getAngleX());
@@ -212,8 +265,8 @@ void loop()
     //  Serial.println(distance);
     // Serial.println(GetLine());
     // SetSpeed(100,0,0);
-    //SetSpeed(100,0,200);
-    tracing();
+    // SetSpeed(100,0,200);
+
 #if 0
     int packetSize = Udp.parsePacket();
     if (packetSize)
@@ -319,31 +372,6 @@ void MotorInit(void)
  */
 void SetDirectionAndSpeed(int speed1, int speed2, int speed3, int speed4)
 {
-    // int tmp;
-    // int max = 150;
-    // float factor = 0.0;
-
-    // if (abs(speed1) > max | abs(speed2) > max | abs(speed3) > max | abs(speed4) > max)
-    // {
-    //     tmp = speed1;
-    //     if (abs(speed2) > abs(tmp))
-    //         tmp = speed2;
-    //     if (abs(speed3) > abs(tmp))
-    //         tmp = speed3;
-    //     if (abs(speed4) > abs(tmp))
-    //         tmp = speed4;
-    // }
-    // factor = max / tmp;
-    // speed1 = speed1 * factor;
-    // speed2 = speed2 * factor;
-    // speed3 = speed3 * factor;
-    // speed4 = speed4 * factor;
-
-    // Serial.println(speed1);
-    // Serial.println(speed2);
-    // Serial.println(speed3);
-    // Serial.println(speed4);
-
     /*不同电机接线方向可能不同，改IN1 和 IN2的逻辑*/
     if (speed1 < 0)
     {
@@ -422,8 +450,8 @@ void LineInit(void)
 /**
  * 黑线为0 白线为1
  * x2 x1 x3 x4 是真实分布
- * 0011 数字是 1100 
-*/
+ * 0011 数字是 1100
+ */
 uint8_t GetLine(void)
 {
     uint8_t x1, x2, x3, x4;
@@ -433,54 +461,75 @@ uint8_t GetLine(void)
     x2 = digitalRead(IO_X2);
     x3 = digitalRead(IO_X3);
     x4 = digitalRead(IO_X4); // 黑线为0 白线为1
-    Serial.printf("x1: %d, x2: %d, x3: %d, x4: %d\n", x1, x2, x3, x4);
+    // Serial.printf("x1: %d, x2: %d, x3: %d, x4: %d\n", x1, x2, x3, x4);
 
-    tmp = x2<<3 | (x1<<2) | (x3 <<1) | x4;
+    tmp = x2 << 3 | (x1 << 2) | (x3 << 1) | x4;
     // tmp = x2 | (x1 << 1) | (x3 << 2) | (x4 << 3);
     return tmp;
 }
 void tracing(void)
 {
-    static uint8_t trace_num=0;
-    static uint8_t last_trace_num=0;
+    static uint8_t trace_num = 15;
+    static uint8_t last_trace_num = 15;
 
-    last_trace_num=trace_num;
+    last_trace_num = trace_num;
     trace_num = GetLine();
 
     display_mode(trace_num);
-    if(trace_num==15)
+
+    if (trace_num == 15)
     {
-        trace_num=last_trace_num; //如果是全白，则重复上次的动作
+        trace_num = last_trace_num; // 如果是全白，则重复上次的动作
     }
+
     switch (trace_num)
-    {       
-    case 9:  //1001
+    {
+    case 9: // 1001
         SetSpeed(100, 0, 0);
         break;
 
-    case 13:  //1101 右转
+    case 13: // 1101 右转
         SetSpeed(40, 0, 200);
         break;
-    case 14: //1110 右转
+    case 14: // 1110 右转
         SetSpeed(40, 0, 200);
         break;
 
-    case 11:  //1011 左转
-        SetSpeed(40, 0, -200); 
+    case 11: // 1011 左转
+        SetSpeed(40, 0, -200);
         break;
-    case 7:  //0111 左转
+    case 7:                    // 0111 左转
         SetSpeed(40, 0, -200); // turn left
         break;
-    
-    case 0: //0000
-    case 1: //0001
-    case 8: //1000
-    case 3: //0011
-    case 12: //1100
-    case 2: //0010
-    case 4: //0100
-        SetSpeed(30, 0, -1000);
-        delay(800);
+
+    case 0:  // 0000
+    case 1:  // 0001
+    case 8:  // 1000
+    case 3:  // 0011
+    case 12: // 1100
+    case 2:  // 0010
+    case 4:  // 0100
+        if (the_way_arr[cross_cnt] == 1)
+        {
+            SetSpeed(100, 0, 0);
+            delay(500);
+        }
+        else if (the_way_arr[cross_cnt] == 2)
+        {
+            SetSpeed(30, 0, 1000);
+            delay(800);
+        }
+        else if (the_way_arr[cross_cnt] == 3)
+        {
+            SetSpeed(30, 0, 1000);
+            delay(1600);
+        }
+        else if (the_way_arr[cross_cnt] == 4)
+        {
+            SetSpeed(30, 0, -1000);
+            delay(800);
+        }
+        cross_cnt++;
         break;
     default:
         SetSpeed(0, 0, 0);
@@ -503,7 +552,7 @@ void SetSpeed(float vx_set, float vy_set, float wz_set)
     speed4 = vx_set + vy_set - MOTOR_DISTANCE_TO_CENTER * wz_set;
 
 #ifdef STOP_DEBUG
-    speed1=speed2=speed3=speed4=0;
+    speed1 = speed2 = speed3 = speed4 = 0;
 #endif
     SetDirectionAndSpeed(speed1, speed2, speed3, speed4);
 }
@@ -522,5 +571,4 @@ void display_mode(int mode)
 
 void get_mpu6050(float *angleX, float *angleY, float *angleZ)
 {
-    
 }
