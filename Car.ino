@@ -5,14 +5,27 @@
 #include <Adafruit_SSD1306.h>
 #include <MPU6050_tockn.h>
 
+#define led_on() digitalWrite(2, LOW)
+#define led_off() digitalWrite(2, HIGH)
+
+/*---------config---------*/
 // #define STOP_DEBUG
+#define MPU6050_LOOP
+
 enum
 {
     INIT_STATE, // 识别，串口通信，保存地图，
     FOLLOW_LINE,
+    TURN_STATE,
 };
 
 int robot_state = INIT_STATE;
+float yaw;
+float yaw_target;
+
+unsigned long last_time = 0;
+unsigned long current_time = 0;
+int record_flag = 0;
 
 MPU6050 mpu6050(Wire);
 
@@ -20,11 +33,11 @@ MPU6050 mpu6050(Wire);
  * @brief 巡线传感器引脚定义
  *
  */
-#define IO_X1 35
-#define IO_X2 34
-#define IO_X3 39
-#define IO_X4 36
-
+#define IO_X1 36 // 左
+#define IO_X2 39
+#define IO_X3 34
+#define IO_X4 35
+#define IO_X5 23 // 右
 /**
  * @brief 电机接口定义
  *
@@ -44,8 +57,8 @@ MPU6050 mpu6050(Wire);
 /**
  * @brief 超声波接口定义
  */
-#define IO_TRIG 23
-#define IO_ECHO 25
+// #define IO_TRIG 23
+// #define IO_ECHO 25
 
 /*-----OLED Definition-------*/
 #define SCREEN_WIDTH 128
@@ -96,13 +109,13 @@ void SetSpeed(float vx_set, float vy_set, float wz_set);
 /**
  * @brief 超声波引脚初始化1111
  */
-void UltrasonicInit(void);
+// void UltrasonicInit(void);
 /**
  * @brief 超声波测距
  *
  * @return int
  */
-int UltrasonicDistence(void);
+// int UltrasonicDistence(void);
 /**
  * @brief 灰度巡线模块数据 x1 x2 x3 x4
  *
@@ -112,6 +125,7 @@ uint8_t GetLine(void);
 /**
  * 陀螺仪
  */
+
 void get_mpu6050(float *angleX, float *angleY, float *angleZ);
 void tracing(void);
 
@@ -125,34 +139,39 @@ float distance;
 4   2
   3
 */
-uint8_t the_way_arr[128] = {1, 2, 3, 4}; // 判断方向的数组
-int cross_cnt = 0;                       // 经过路口的数量，索引
+uint8_t the_way_arr[128] = {4, 4, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
+int cross_cnt = 0;                                                                                                                                                                                                                                                                                         // 经过路口的数量，索引
 
 int rx_cnt = 0;
-
+int rx_finish = 0;
 void serialEvent()
 {
-    int buff_num = 0;
-    Serial.printf("number is %d\n", Serial.available());
+    // Serial.println("serialEvent");
+    // Serial.println(Serial.available());
     while (Serial.available())
     {
-        buff_num++;
-        char incomingChar = Serial.read();
+        uint8_t incomingChar = Serial.read();
         if (rx_cnt != 0)
         {
+            if (incomingChar == 'b')
+            {
+                Serial.println("rx_finish");
+                rx_finish = 1;
+                rx_cnt = 0;
+                break;
+            }
             rx_buff[rx_cnt - 1] = incomingChar;
             rx_cnt++;
         }
         if (rx_cnt == 0)
         {
-            if (incomingChar == 0x5f)
+            if (incomingChar == 'a')
             {
                 rx_cnt++;
             }
         }
-        // Serial.print(incomingChar);
+        Serial.println(incomingChar);
     }
-    Serial.printf("buff_num is %d,%d\n", 1, (int)buff_num);
 }
 
 void setup()
@@ -164,9 +183,9 @@ void setup()
 
     Serial.begin(9600);
     Wire.begin();
+    delay(1000);
 #if 1
     delay(500);
-    UltrasonicInit();
 
     /**各种外设初始化**/
     MotorInit();
@@ -184,14 +203,16 @@ void setup()
     display.display();
     delay(2000);
 
-    //    mpu6050.begin();
-    //    mpu6050.calcGyroOffsets(true);
-    //    Serial.println("mpu6050 done");
+    mpu6050.begin();
+    mpu6050.calcGyroOffsets(true);
+    Serial.println("mpu6050 done");
 
     display.clearDisplay();
+
+#if 0
     /**---------------------TCP Server Init---------------------------**/
     WiFi.mode(WIFI_STA);
-    /*------------------connect to the internet-------------------*/
+    // /*------------------connect to the internet-------------------*/
     WiFi.begin(sta_ssid, sta_password);
 
     display.clearDisplay();
@@ -222,32 +243,70 @@ void setup()
     display.display();
 
     Udp.begin(3000);
-    digitalWrite(2, HIGH);
+    led_off();
     delay(500);
-    digitalWrite(2, LOW);
-    delay(500);
+    led_on();
 #endif
+#endif
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
 }
 
 void loop()
 {
     delay(5);
+    mpu6050.update();
+    // if(rx_finish)
+    // {
+    //     for(int i=0;i<128;i++)
+    //     {
+    //         Serial.print(rx_buff[i]);
+    //     }
+    // }
 
+    yaw = mpu6050.getAngleZ();
+
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.printf("yaw: %f\n",yaw);
+    display.printf("state: %d\n",robot_state);
+    display.display();
+
+#if 1
     switch (robot_state)
     {
     case INIT_STATE:
 
-        if (GetLine() != 15) //任意一个传感器检测到黑，启动
+        if (GetLine() != 0 && GetLine() != 0b11111) // 任意一个传感器检测到黑，启动
         {
             robot_state = FOLLOW_LINE;
         }
         break;
 
     case FOLLOW_LINE:
-
         tracing();
         break;
+
+#ifdef MPU6050_LOOP
+    case TURN_STATE:
+        if (yaw - yaw_target > 0.5)
+        {
+            SetSpeed(0, 0, 1000);
+        }
+        else if (yaw - yaw_target < -0.5)
+        {
+            SetSpeed(0, 0, -1000);
+        }
+        else
+        {
+            SetSpeed(0, 0, 0);
+            robot_state = FOLLOW_LINE;
+        }
+        break;
+#endif
     }
+#endif
+
     // for (int i = 0; i < 128; i++)
     // {
     //     Serial.print(rx_buff[i]);
@@ -427,43 +486,44 @@ void SetDirectionAndSpeed(int speed1, int speed2, int speed3, int speed4)
     }
 }
 
-void UltrasonicInit(void)
-{
-    pinMode(IO_TRIG, OUTPUT);
-    pinMode(IO_ECHO, INPUT);
-}
-int UltrasonicDistence(void)
-{
-    digitalWrite(IO_TRIG, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(IO_TRIG, LOW);
-    return pulseIn(IO_ECHO, HIGH);
-}
+// void UltrasonicInit(void)
+// {
+//     pinMode(IO_TRIG, OUTPUT);
+//     pinMode(IO_ECHO, INPUT);
+// }
+// int UltrasonicDistence(void)
+// {
+//     digitalWrite(IO_TRIG, HIGH);
+//     delayMicroseconds(10);
+//     digitalWrite(IO_TRIG, LOW);
+//     return pulseIn(IO_ECHO, HIGH);
+// }
 void LineInit(void)
 {
     pinMode(IO_X1, INPUT);
     pinMode(IO_X2, INPUT);
     pinMode(IO_X3, INPUT);
     pinMode(IO_X4, INPUT);
+    pinMode(IO_X5, INPUT);
 }
 
 /**
- * 黑线为0 白线为1
- * x2 x1 x3 x4 是真实分布
- * 0011 数字是 1100
+ * 黑线为1 白线为0
+ * x1 x1 x3 x4 x5是真实分布
  */
 uint8_t GetLine(void)
 {
-    uint8_t x1, x2, x3, x4;
+    uint8_t x1, x2, x3, x4, x5;
     uint8_t tmp = 0;
 
     x1 = digitalRead(IO_X1);
     x2 = digitalRead(IO_X2);
     x3 = digitalRead(IO_X3);
     x4 = digitalRead(IO_X4); // 黑线为0 白线为1
+    x5 = digitalRead(IO_X5);
     // Serial.printf("x1: %d, x2: %d, x3: %d, x4: %d\n", x1, x2, x3, x4);
 
-    tmp = x2 << 3 | (x1 << 2) | (x3 << 1) | x4;
+    tmp = (x1 << 4) | (x2 << 3) | (x3 << 2) | (x4 << 1) | x5;
     // tmp = x2 | (x1 << 1) | (x3 << 2) | (x4 << 3);
     return tmp;
 }
@@ -471,68 +531,109 @@ void tracing(void)
 {
     static uint8_t trace_num = 15;
     static uint8_t last_trace_num = 15;
+    float current_yaw = 0.0;
 
     last_trace_num = trace_num;
     trace_num = GetLine();
 
-    display_mode(trace_num);
+    // display_mode(trace_num);
 
-    if (trace_num == 15)
+    // if (trace_num == 15)
+    // {
+    //     trace_num = last_trace_num; // 如果是全白，则重复上次的动作
+    // }
+    if (((1 & trace_num) == 1) || (((1 << 4) & trace_num) == (1 << 4)))
     {
-        trace_num = last_trace_num; // 如果是全白，则重复上次的动作
-    }
 
-    switch (trace_num)
-    {
-    case 9: // 1001
-        SetSpeed(100, 0, 0);
-        break;
+#ifdef MPU6050_LOOP
+        current_yaw = yaw;
+        SetSpeed(50, 0, 0);
+        delay(400);
 
-    case 13: // 1101 右转
-        SetSpeed(40, 0, 200);
-        break;
-    case 14: // 1110 右转
-        SetSpeed(40, 0, 200);
-        break;
-
-    case 11: // 1011 左转
-        SetSpeed(40, 0, -200);
-        break;
-    case 7:                    // 0111 左转
-        SetSpeed(40, 0, -200); // turn left
-        break;
-
-    case 0:  // 0000
-    case 1:  // 0001
-    case 8:  // 1000
-    case 3:  // 0011
-    case 12: // 1100
-    case 2:  // 0010
-    case 4:  // 0100
-        if (the_way_arr[cross_cnt] == 1)
+        robot_state = TURN_STATE;
+        if (the_way_arr[cross_cnt] == 2)
         {
-            SetSpeed(100, 0, 0);
-            delay(500);
-        }
-        else if (the_way_arr[cross_cnt] == 2)
-        {
-            SetSpeed(30, 0, 1000);
-            delay(800);
+            yaw_target = current_yaw - 90;
         }
         else if (the_way_arr[cross_cnt] == 3)
         {
-            SetSpeed(30, 0, 1000);
-            delay(1600);
+            yaw_target = current_yaw + 180;
         }
         else if (the_way_arr[cross_cnt] == 4)
         {
-            SetSpeed(30, 0, -1000);
-            delay(800);
+            yaw_target = current_yaw + 90;
         }
         cross_cnt++;
-        break;
-    default:
+        return;
+#endif
+        // display.clearDisplay();
+
+        // display.setTextSize(2);
+        // display.setTextColor(SSD1306_WHITE);
+        // display.setCursor(0, 20);
+        // display.println("Turning");
+        // display.display();
+
+        SetSpeed(50, 0, 0);
+        delay(400);
+
+        if (the_way_arr[cross_cnt] == 1)
+        {
+            SetSpeed(100, 0, 0);
+            delay(200);
+        }
+        else if (the_way_arr[cross_cnt] == 2)
+        {
+            SetSpeed(0, 0, 1000);
+            delay(820);
+            // while (1)
+            // {
+            //     SetSpeed(0, 0, 1000);
+            //     if (((1 << 2) & GetLine()) == (1 << 2))
+            //         break;
+            // }
+        }
+        else if (the_way_arr[cross_cnt] == 3)
+        {
+            SetSpeed(0, 0, 0);
+            delay(5000);
+        }
+        else if (the_way_arr[cross_cnt] == 4)
+        {
+            SetSpeed(0, 0, -1000);
+            delay(820);
+            // while (1)
+            // {
+            //     SetSpeed(0, 0, -1000);
+            //     if (((1 << 2) & GetLine()) == (1 << 2))
+            //         break;
+            // }
+        }
         SetSpeed(0, 0, 0);
+        delay(100);
+
+        cross_cnt++;
+    }
+    else
+    {
+        switch (trace_num)
+        {
+
+        case 0b00000:
+        case 0b00100:
+            SetSpeed(100, 0, 0); // go straight
+            break;
+        case 0b00110:
+        case 0b00010:
+            SetSpeed(40, 0, 200); // turn right
+            break;
+        case 0b01100:
+        case 0b01000:
+            SetSpeed(40, 0, -200); // turn left
+            break;
+        default:
+            SetSpeed(0, 0, 0);
+        }
     }
 }
 /*
