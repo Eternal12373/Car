@@ -17,15 +17,15 @@ enum
     INIT_STATE, // 识别，串口通信，保存地图，
     FOLLOW_LINE,
     TURN_STATE,
+    SLOW_STRAIGHT_BEFORE_TURN,
 };
 
 int robot_state = INIT_STATE;
 float yaw;
 float yaw_target;
 
-unsigned long last_time = 0;
+unsigned long start_time = 0;
 unsigned long current_time = 0;
-int record_flag = 0;
 
 MPU6050 mpu6050(Wire);
 
@@ -268,8 +268,8 @@ void loop()
 
     display.clearDisplay();
     display.setCursor(0, 0);
-    display.printf("yaw: %f\n",yaw);
-    display.printf("state: %d\n",robot_state);
+    display.printf("yaw: %f\n", yaw);
+    display.printf("state: %d\n", robot_state);
     display.display();
 
 #if 1
@@ -288,6 +288,18 @@ void loop()
         break;
 
 #ifdef MPU6050_LOOP
+    case SLOW_STRAIGHT_BEFORE_TURN:
+        SetSpeed(50, 0, 0);
+        if (millis() - start_time < 400)
+        {
+            SetSpeed(50, 0, 0);
+        }
+        else
+        {
+            SetSpeed(0, 0, 0);
+            robot_state = TURN_STATE;
+        }
+        break;
     case TURN_STATE:
         if (yaw - yaw_target > 0.5)
         {
@@ -546,24 +558,24 @@ void tracing(void)
     {
 
 #ifdef MPU6050_LOOP
-        current_yaw = yaw;
-        SetSpeed(50, 0, 0);
-        delay(400);
+        // SetSpeed(50, 0, 0);
+        // delay(400);
 
-        robot_state = TURN_STATE;
+        robot_state = SLOW_STRAIGHT_BEFORE_TURN;
         if (the_way_arr[cross_cnt] == 2)
         {
-            yaw_target = current_yaw - 90;
+            yaw_target = yaw - 90;
         }
         else if (the_way_arr[cross_cnt] == 3)
         {
-            yaw_target = current_yaw + 180;
+            yaw_target = yaw + 180;
         }
         else if (the_way_arr[cross_cnt] == 4)
         {
-            yaw_target = current_yaw + 90;
+            yaw_target = yaw + 90;
         }
         cross_cnt++;
+        start_time = millis();
         return;
 #endif
         // display.clearDisplay();
