@@ -89,7 +89,11 @@ float yaw;
 float yaw_target;
 
 int is_real_flag = 0;
+int is_stop_flag = 0;
+
 int is_start_detect = 0;
+
+int straight_speed=100;
 
 unsigned long start_time = 0;
 unsigned long current_time = 0;
@@ -262,13 +266,20 @@ void serialEvent()
     {
         while (Serial.available())
         {
-            if (Serial.read() == 1)
+
+            if (is_stop_flag <= 3)
             {
-                is_real_flag++;
+                if (Serial.read() == 2)
+                {
+                    is_stop_flag++;
+                }
             }
             else
             {
-                is_real_flag = 0;
+                if (Serial.read() == 1)
+                {
+                    is_real_flag = 1;
+                }
             }
         }
     }
@@ -338,6 +349,12 @@ void loop()
     display.println(stateNames[robot_state]);
     display.display();
 
+    // 状态改变
+    if (is_stop_flag >= 3)
+    {
+        robot_state = DETECT_STATE;
+    }
+
     switch (robot_state)
     {
     case INIT_STATE:
@@ -352,15 +369,26 @@ void loop()
         tracing();
         break;
     case DETECT_STATE:
+        SetSpeed(0, 0, 0);
+        if (is_real_flag)
+        {
+            robot_state = STRIKE_STATE;
+            is_stop_flag = 0;
+        }
+        else
+        {
+            robot_state = TURN_180;
+            yaw_target = yaw + 180;
+        }
         break;
     case STRIKE_STATE:
         if (millis() - strike_start_time < 700)
         {
-            SetSpeed(70, 0, 0);
+            SetSpeed(100, 0, 0);
         }
         else if (millis() - strike_start_time < 1400)
         {
-            SetSpeed(-70, 0, 0);
+            SetSpeed(-100, 0, 0);
         }
         else
         {
@@ -383,13 +411,16 @@ void loop()
         break;
 
     case SLOW_STRAIGHT_BEFORE_TURN:
-        if (millis() - start_time < 220)
+        if (millis() - start_time < 290)
         {
             SetSpeed(100, 0, 0);
         }
-        else
+        else if (millis() - start_time < 330)
         {
             SetSpeed(0, 0, 0);
+        }
+        else
+        {
             robot_state = TURN_STATE;
             rotate_yaw.pid_reset();
         }
@@ -559,23 +590,15 @@ void tracing(void)
     last_trace_num = trace_num;
     trace_num = GetLine();
 
-    if (is_real_flag >= 5 && is_start_detect)
-    {
-        robot_state = STRIKE_STATE;
-        strike_start_time = millis();
-        is_start_detect = 0;
-        return;
-    }
-
     if (((1 & trace_num) == 1) || (((1 << 4) & trace_num) == (1 << 4)))
     {
 
 #ifdef MPU6050_LOOP
 
-        if (the_way_arr[cross_cnt + 1] == 3)
-        {
-            is_start_detect = 1;
-        }
+        // if (the_way_arr[cross_cnt + 1] == 3)
+        // {
+        //     is_start_detect = 1;
+        // }
 
         robot_state = SLOW_STRAIGHT_BEFORE_TURN;
         if (the_way_arr[cross_cnt] == 2)
