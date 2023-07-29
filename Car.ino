@@ -67,6 +67,9 @@ enum
     FOLLOW_LINE,
     TURN_STATE,
     SLOW_STRAIGHT_BEFORE_TURN,
+    DETECT_STATE,
+    STRIKE_STATE,
+    TURN_180,
     STATE_COUNT,
 };
 
@@ -75,15 +78,24 @@ const char *stateNames[STATE_COUNT] =
         "INIT_STATE",
         "FOLLOW_LINE",
         "TURN_STATE",
-        "SLOW_STRAIGHT_BEFORE_TURN",
+        "SLOW_STRAIGHT",
+        "DETECT_STATE",
+        "STRIKE_STATE",
+        "TURN_180",
 };
 
 int robot_state = INIT_STATE;
 float yaw;
 float yaw_target;
 
+int is_real_flag = 0;
+int is_start_detect = 0;
+
 unsigned long start_time = 0;
 unsigned long current_time = 0;
+
+unsigned long strike_start_time = 0;
+unsigned long strike_current_time = 0;
 
 PIDController rotate_yaw(35, 0.3, 0, 500, 1300);
 
@@ -150,7 +162,7 @@ String but_l;
 String but_r;
 
 uint8_t send_buff[20];
-uint8_t rx_buff[128];
+uint8_t rx_buff[128] = {0};
 
 WiFiUDP Udp;
 
@@ -196,14 +208,17 @@ void start_detect(void);
 
 long duration;
 float distance;
-
+int rx_length = 0;
+uint8_t rx_char = 0;
 /*
   1
 4   2
   3
 */
 uint8_t the_way_arr[128] = {4, 4, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
-int cross_cnt = 0;                                                                                                                                                                                                                                                                                         // 经过路口的数量，索引
+// uint8_t the_way_arr[128] = {4, 3, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
+
+int cross_cnt = 0; // 经过路口的数量，索引
 
 int rx_cnt = 0;
 int rx_finish = 0;
@@ -211,36 +226,51 @@ void serialEvent()
 {
     // Serial.println("serialEvent");
     // Serial.println(Serial.available());
-    while (Serial.available())
+    if (robot_state == INIT_STATE)
     {
-        uint8_t incomingChar = Serial.read();
-        if (rx_cnt != 0)
+        while (Serial.available())
         {
-            if (incomingChar == 'b')
+            uint8_t incomingChar = Serial.read();
+            rx_char = incomingChar;
+            if (rx_cnt != 0)
             {
-                Serial.println("rx_finish");
-                rx_finish = 1;
-                rx_cnt = 0;
-                break;
-            }
-            rx_buff[rx_cnt - 1] = incomingChar;
-            rx_cnt++;
-        }
-        if (rx_cnt == 0)
-        {
-            if (incomingChar == 'a')
-            {
+                if (incomingChar == 'b')
+                {
+                    // Serial.println("rx_finish");
+                    rx_finish = 1;
+                    rx_length = rx_cnt - 1;
+                    rx_cnt = 0;
+                    // for(int i=0;i<rx_length;i++)
+                    // {
+                    //     Serial.printf("%d/n",rx_buff[i]);
+                    // }
+                    break;
+                }
+                rx_buff[rx_cnt - 1] = (int)(incomingChar - '0');
                 rx_cnt++;
             }
+            if (rx_cnt == 0)
+            {
+                if (incomingChar == 'a')
+                {
+                    rx_cnt++;
+                }
+            }
         }
-        
-        Serial.println(incomingChar);
-
-        display.clearDisplay();
-        display.setCursor(0, 0);
-        display.setTextSize(2);
-        display.println(incomingChar);
-        display.display();
+    }
+    else
+    {
+        while (Serial.available())
+        {
+            if (Serial.read() == 1)
+            {
+                is_real_flag++;
+            }
+            else
+            {
+                is_real_flag = 0;
+            }
+        }
     }
 }
 
@@ -283,7 +313,8 @@ void setup()
 void loop()
 {
     delay(5);
-    // mpu6050.update();
+    mpu6050.update();
+
     // if(rx_finish)
     // {
     //     for(int i=0;i<128;i++)
@@ -292,20 +323,21 @@ void loop()
     //     }
     // }
 
-    // yaw = mpu6050.getAngleZ();
+    yaw = mpu6050.getAngleZ();
 
-    // display.clearDisplay();
-    // display.setCursor(0, 0);
-    // display.setTextSize(1);
-    // display.printf("yaw: %f\n", yaw);
-    // display.printf("err: %f\n", yaw - yaw_target);
-    // display.printf("cnt: %d\n", cross_cnt);
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.setTextSize(1);
+    display.printf("yaw: %f\n", yaw);
+    display.printf("err: %f\n", yaw - yaw_target);
+    display.printf("cnt: %d\n", cross_cnt);
+    display.printf("tx:%d\n", is_start_detect);
+    display.printf("is_real:%d\n", is_real_flag);
+    display.printf("rx_length:%d\n", rx_length);
+    display.printf("rx_char:%d\n", rx_char);
+    display.println(stateNames[robot_state]);
+    display.display();
 
-    // display.setTextSize(2);
-    // display.println(stateNames[robot_state]);
-    // display.display();
-
-#if 0
     switch (robot_state)
     {
     case INIT_STATE:
@@ -319,12 +351,41 @@ void loop()
     case FOLLOW_LINE:
         tracing();
         break;
-
-#ifdef MPU6050_LOOP
-    case SLOW_STRAIGHT_BEFORE_TURN:
-        if (millis() - start_time < 350)
+    case DETECT_STATE:
+        break;
+    case STRIKE_STATE:
+        if (millis() - strike_start_time < 700)
         {
-            SetSpeed(50, 0, 0);
+            SetSpeed(70, 0, 0);
+        }
+        else if (millis() - strike_start_time < 1400)
+        {
+            SetSpeed(-70, 0, 0);
+        }
+        else
+        {
+            robot_state = TURN_180;
+            yaw_target = yaw + 180;
+        }
+        break;
+
+    case TURN_180:
+        if (fabs(yaw - yaw_target) > 5)
+        {
+            SetSpeed(0, 0, -rotate_yaw.compute(yaw, yaw_target));
+        }
+        else
+        {
+            SetSpeed(0, 0, 0);
+            is_real_flag = 0;
+            robot_state = FOLLOW_LINE;
+        }
+        break;
+
+    case SLOW_STRAIGHT_BEFORE_TURN:
+        if (millis() - start_time < 220)
+        {
+            SetSpeed(100, 0, 0);
         }
         else
         {
@@ -334,7 +395,6 @@ void loop()
         }
         break;
     case TURN_STATE:
-
         int output = (int)(rotate_yaw.compute(yaw, yaw_target));
 
         if (fabs(yaw - yaw_target) > 5)
@@ -347,9 +407,7 @@ void loop()
             robot_state = FOLLOW_LINE;
         }
         break;
-#endif
     }
-#endif
 
     // for (int i = 0; i < 128; i++)
     // {
@@ -501,27 +559,28 @@ void tracing(void)
     last_trace_num = trace_num;
     trace_num = GetLine();
 
-    // display_mode(trace_num);
+    if (is_real_flag >= 5 && is_start_detect)
+    {
+        robot_state = STRIKE_STATE;
+        strike_start_time = millis();
+        is_start_detect = 0;
+        return;
+    }
 
-    // if (trace_num == 15)
-    // {
-    //     trace_num = last_trace_num; // 如果是全白，则重复上次的动作
-    // }
     if (((1 & trace_num) == 1) || (((1 << 4) & trace_num) == (1 << 4)))
     {
 
 #ifdef MPU6050_LOOP
-        // SetSpeed(50, 0, 0);
-        // delay(400);
+
+        if (the_way_arr[cross_cnt + 1] == 3)
+        {
+            is_start_detect = 1;
+        }
 
         robot_state = SLOW_STRAIGHT_BEFORE_TURN;
         if (the_way_arr[cross_cnt] == 2)
         {
             yaw_target = yaw - 90;
-        }
-        else if (the_way_arr[cross_cnt] == 3)
-        {
-            yaw_target = yaw + 180;
         }
         else if (the_way_arr[cross_cnt] == 4)
         {
@@ -539,45 +598,45 @@ void tracing(void)
         // display.println("Turning");
         // display.display();
 
-        SetSpeed(50, 0, 0);
-        delay(400);
+        // SetSpeed(50, 0, 0);
+        // delay(400);
 
-        if (the_way_arr[cross_cnt] == 1)
-        {
-            SetSpeed(100, 0, 0);
-            delay(200);
-        }
-        else if (the_way_arr[cross_cnt] == 2)
-        {
-            SetSpeed(0, 0, 1000);
-            delay(820);
-            // while (1)
-            // {
-            //     SetSpeed(0, 0, 1000);
-            //     if (((1 << 2) & GetLine()) == (1 << 2))
-            //         break;
-            // }
-        }
-        else if (the_way_arr[cross_cnt] == 3)
-        {
-            SetSpeed(0, 0, 0);
-            delay(5000);
-        }
-        else if (the_way_arr[cross_cnt] == 4)
-        {
-            SetSpeed(0, 0, -1000);
-            delay(820);
-            // while (1)
-            // {
-            //     SetSpeed(0, 0, -1000);
-            //     if (((1 << 2) & GetLine()) == (1 << 2))
-            //         break;
-            // }
-        }
-        SetSpeed(0, 0, 0);
-        delay(100);
+        // if (the_way_arr[cross_cnt] == 1)
+        // {
+        //     SetSpeed(100, 0, 0);
+        //     delay(200);
+        // }
+        // else if (the_way_arr[cross_cnt] == 2)
+        // {
+        //     SetSpeed(0, 0, 1000);
+        //     delay(820);
+        //     // while (1)
+        //     // {
+        //     //     SetSpeed(0, 0, 1000);
+        //     //     if (((1 << 2) & GetLine()) == (1 << 2))
+        //     //         break;
+        //     // }
+        // }
+        // else if (the_way_arr[cross_cnt] == 3)
+        // {
+        //     SetSpeed(0, 0, 0);
+        //     delay(5000);
+        // }
+        // else if (the_way_arr[cross_cnt] == 4)
+        // {
+        //     SetSpeed(0, 0, -1000);
+        //     delay(820);
+        //     // while (1)
+        //     // {
+        //     //     SetSpeed(0, 0, -1000);
+        //     //     if (((1 << 2) & GetLine()) == (1 << 2))
+        //     //         break;
+        //     // }
+        // }
+        // SetSpeed(0, 0, 0);
+        // delay(100);
 
-        cross_cnt++;
+        // cross_cnt++;
     }
     else
     {
@@ -657,5 +716,5 @@ float limit(float value, float min_value, float max_value)
 
 void start_detect(void)
 {
-    Serial.printf("%d",1);
+    Serial.printf("%d", 1);
 }
