@@ -12,12 +12,70 @@
 // #define STOP_DEBUG
 #define MPU6050_LOOP
 
+class PIDController
+{
+private:
+    float kp, ki, kd;
+    float integral, previousError;
+    float integralLimit, outputLimit;
+
+public:
+    PIDController(float kp, float ki, float kd, float integralLimit, float outputLimit)
+    {
+        this->kp = kp;
+        this->ki = ki;
+        this->kd = kd;
+        this->integralLimit = integralLimit;
+        this->outputLimit = outputLimit;
+        this->integral = 0;
+        this->previousError = 0;
+    }
+
+    float compute(float input, float setpoint)
+    {
+        float error = setpoint - input;
+        integral += error;
+        // Add integral windup prevention
+        if (integral > integralLimit)
+            integral = integralLimit;
+        if (integral < -integralLimit)
+            integral = -integralLimit;
+
+        float derivative = error - previousError;
+        previousError = error;
+
+        float output = kp * error + ki * integral + kd * derivative;
+
+        // Limit the output
+        if (output > outputLimit)
+            output = outputLimit;
+        if (output < -outputLimit)
+            output = -outputLimit;
+
+        return output;
+    }
+    void pid_reset()
+    {
+        this->integral = 0;
+        this->previousError = 0;
+    }
+};
+
 enum
 {
     INIT_STATE, // 识别，串口通信，保存地图，
     FOLLOW_LINE,
     TURN_STATE,
     SLOW_STRAIGHT_BEFORE_TURN,
+    STATE_COUNT,
+};
+
+const char *stateNames[STATE_COUNT] =
+    {
+        "INIT_STATE",
+        "FOLLOW_LINE",
+        "TURN_STATE",
+        "SLOW_STRAIGHT_BEFORE_TURN",
 };
 
 int robot_state = INIT_STATE;
@@ -26,6 +84,8 @@ float yaw_target;
 
 unsigned long start_time = 0;
 unsigned long current_time = 0;
+
+PIDController rotate_yaw(35, 0.3, 0, 500, 1300);
 
 MPU6050 mpu6050(Wire);
 
@@ -131,6 +191,9 @@ void tracing(void);
 
 void display_mode(int mode);
 
+float limit(float value, float min_value, float max_value);
+void start_detect(void);
+
 long duration;
 float distance;
 
@@ -170,12 +233,20 @@ void serialEvent()
                 rx_cnt++;
             }
         }
+        
         Serial.println(incomingChar);
+
+        display.clearDisplay();
+        display.setCursor(0, 0);
+        display.setTextSize(2);
+        display.println(incomingChar);
+        display.display();
     }
 }
 
 void setup()
 {
+    delay(3000);
     for (int i = 0; i < 128; i++)
     {
         rx_buff[i] = 0;
@@ -191,71 +262,28 @@ void setup()
     MotorInit();
     LineInit();
 
-    pinMode(2, OUTPUT);
-    digitalWrite(2, LOW);
     if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
     {
-        Serial.println(F("SSD1306 allocation failed"));
         for (;;)
             ;
     }
-    Serial.println("oled done");
     display.display();
     delay(2000);
 
     mpu6050.begin();
     mpu6050.calcGyroOffsets(true);
-    Serial.println("mpu6050 done");
 
     display.clearDisplay();
 
-#if 0
-    /**---------------------TCP Server Init---------------------------**/
-    WiFi.mode(WIFI_STA);
-    // /*------------------connect to the internet-------------------*/
-    WiFi.begin(sta_ssid, sta_password);
-
-    display.clearDisplay();
-    display.setTextSize(2);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
-    display.println(sta_password);
-    display.println(sta_ssid);
-    display.print("Connecting");
-
-    while (WiFi.status() != WL_CONNECTED)
-    {
-        Serial.print(".");
-        display.display();
-        delay(500);
-    }
-    Serial.println("Connected");
-    Serial.print("IP Address:");
-    Serial.println(WiFi.localIP());
-
-    display.clearDisplay();
-
-    display.setTextSize(2);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 30);
-    display.println("shl-001");
-    //    display.println(WiFi.localIP());
-    display.display();
-
-    Udp.begin(3000);
-    led_off();
-    delay(500);
-    led_on();
 #endif
-#endif
-    display.setTextSize(1);
+
     display.setTextColor(SSD1306_WHITE);
 }
 
 void loop()
 {
     delay(5);
-    mpu6050.update();
+    // mpu6050.update();
     // if(rx_finish)
     // {
     //     for(int i=0;i<128;i++)
@@ -264,15 +292,20 @@ void loop()
     //     }
     // }
 
-    yaw = mpu6050.getAngleZ();
+    // yaw = mpu6050.getAngleZ();
 
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.printf("yaw: %f\n", yaw);
-    display.printf("state: %d\n", robot_state);
-    display.display();
+    // display.clearDisplay();
+    // display.setCursor(0, 0);
+    // display.setTextSize(1);
+    // display.printf("yaw: %f\n", yaw);
+    // display.printf("err: %f\n", yaw - yaw_target);
+    // display.printf("cnt: %d\n", cross_cnt);
 
-#if 1
+    // display.setTextSize(2);
+    // display.println(stateNames[robot_state]);
+    // display.display();
+
+#if 0
     switch (robot_state)
     {
     case INIT_STATE:
@@ -289,8 +322,7 @@ void loop()
 
 #ifdef MPU6050_LOOP
     case SLOW_STRAIGHT_BEFORE_TURN:
-        SetSpeed(50, 0, 0);
-        if (millis() - start_time < 400)
+        if (millis() - start_time < 350)
         {
             SetSpeed(50, 0, 0);
         }
@@ -298,16 +330,16 @@ void loop()
         {
             SetSpeed(0, 0, 0);
             robot_state = TURN_STATE;
+            rotate_yaw.pid_reset();
         }
         break;
     case TURN_STATE:
-        if (yaw - yaw_target > 0.5)
+
+        int output = (int)(rotate_yaw.compute(yaw, yaw_target));
+
+        if (fabs(yaw - yaw_target) > 5)
         {
-            SetSpeed(0, 0, 1000);
-        }
-        else if (yaw - yaw_target < -0.5)
-        {
-            SetSpeed(0, 0, -1000);
+            SetSpeed(0, 0, -output);
         }
         else
         {
@@ -337,85 +369,6 @@ void loop()
     // Serial.println(GetLine());
     // SetSpeed(100,0,0);
     // SetSpeed(100,0,200);
-
-#if 0
-    int packetSize = Udp.parsePacket();
-    if (packetSize)
-    {
-        err_cnt = 0;
-        digitalWrite(2, HIGH);
-        char buf[packetSize + 1];
-        String rx;
-        Udp.read(buf, packetSize);
-        rx = buf;
-
-        index1 = rx.indexOf(':', 0);
-        index2 = rx.indexOf(':', index1 + 1);
-        index3 = rx.indexOf(':', index2 + 1);
-        index4 = rx.indexOf(':', index3 + 1);
-        index5 = rx.indexOf(':', index4 + 1);
-        index6 = rx.indexOf(':', index5 + 1);
-        index7 = rx.indexOf(':', index6 + 1);
-
-        joy_x = rx.substring(0, index1);
-        joy_y = rx.substring(index1 + 1, index2);
-        but_a = rx.substring(index2 + 1, index3);
-        but_b = rx.substring(index3 + 1, index4);
-        but_x = rx.substring(index4 + 1, index5);
-        but_y = rx.substring(index5 + 1, index6);
-        but_l = rx.substring(index6 + 1, index7);
-        but_r = rx.substring(index7 + 1, packetSize + 1);
-
-        if (but_y.toInt())
-        {
-            SetSpeed(100,0,0);
-            // SetDirectionAndSpeed(100, 100, 100, 100);
-        }
-        else if (but_a.toInt())
-        {
-            SetDirectionAndSpeed(-100, -100, -100, -100);
-        }
-        else if (but_x.toInt())
-        {
-            SetDirectionAndSpeed(-100, 100, 100, -100);
-        }
-        else if (but_b.toInt())
-        {
-            SetDirectionAndSpeed(100, -100, -100, 100);
-        }
-        else if (but_l.toInt())
-        {
-            SetDirectionAndSpeed(-100, 100, -100, 100);
-        }
-        else if (but_r.toInt())
-        {
-            SetDirectionAndSpeed(100, -100, 100, -100);
-        }
-        else
-        {
-            SetDirectionAndSpeed(0, 0, 0, 0);
-        }
-
-        // send_buff[0] = 0xA5;
-        // if (joy_x.toInt() == 256)
-        //     send_buff[1] = 255;
-        // else
-        //     send_buff[1] = joy_x.toInt();
-        // if (joy_y.toInt() == 256)
-        //     send_buff[2] = 255;
-        // else
-        //     send_buff[2] = joy_y.toInt();
-        // send_buff[3] = (but_a.toInt() | (but_b.toInt() << 1) | but_x.toInt() << 2 | but_y.toInt() << 3 | but_l.toInt() << 4 | but_r.toInt() << 5);
-        // send_buff[4] = 0x55;
-        // Serial.write(send_buff, 5);
-    }
-    else
-    {
-        err_cnt++;
-        if (err_cnt > 200)
-            digitalWrite(2, LOW);
-    }
-#endif
 }
 
 /**
@@ -637,11 +590,11 @@ void tracing(void)
             break;
         case 0b00110:
         case 0b00010:
-            SetSpeed(40, 0, 200); // turn right
+            SetSpeed(20, 0, 600); // turn right
             break;
         case 0b01100:
         case 0b01000:
-            SetSpeed(40, 0, -200); // turn left
+            SetSpeed(20, 0, -600); // turn left
             break;
         default:
             SetSpeed(0, 0, 0);
@@ -684,4 +637,25 @@ void display_mode(int mode)
 
 void get_mpu6050(float *angleX, float *angleY, float *angleZ)
 {
+}
+
+float limit(float value, float min_value, float max_value)
+{
+    if (value < min_value)
+    {
+        return min_value;
+    }
+    else if (value > max_value)
+    {
+        return max_value;
+    }
+    else
+    {
+        return value;
+    }
+}
+
+void start_detect(void)
+{
+    Serial.printf("%d",1);
 }
