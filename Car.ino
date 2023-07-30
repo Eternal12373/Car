@@ -83,6 +83,8 @@ const char *stateNames[STATE_COUNT] =
         "STRIKE_STATE",
         "TURN_180",
 };
+uint8_t trace_num = 15;
+uint8_t last_trace_num = 15;
 
 int robot_state = INIT_STATE;
 float yaw;
@@ -93,15 +95,16 @@ int is_stop_flag = 0;
 
 int is_start_detect = 0;
 
-int straight_speed=100;
+int straight_speed = 100;
 
 unsigned long start_time = 0;
 unsigned long current_time = 0;
+unsigned long stop_start_time = 0;
 
 unsigned long strike_start_time = 0;
 unsigned long strike_current_time = 0;
 
-PIDController rotate_yaw(35, 0.3, 0, 500, 1300);
+PIDController rotate_yaw(40, 0.5, 0, 400, 1300);
 
 MPU6050 mpu6050(Wire);
 
@@ -267,7 +270,7 @@ void serialEvent()
         while (Serial.available())
         {
 
-            if (is_stop_flag <= 3)
+            if (!is_stop_flag)
             {
                 if (Serial.read() == 2)
                 {
@@ -287,12 +290,6 @@ void serialEvent()
 
 void setup()
 {
-    delay(3000);
-    for (int i = 0; i < 128; i++)
-    {
-        rx_buff[i] = 0;
-    }
-
     Serial.begin(9600);
     Wire.begin();
     delay(1000);
@@ -319,11 +316,14 @@ void setup()
 #endif
 
     display.setTextColor(SSD1306_WHITE);
+    led_on();
+    delay(500);
+    led_off();
 }
 
 void loop()
 {
-    delay(5);
+    delay(2);
     mpu6050.update();
 
     // if(rx_finish)
@@ -338,27 +338,28 @@ void loop()
 
     display.clearDisplay();
     display.setCursor(0, 0);
-    display.setTextSize(1);
-    display.printf("yaw: %f\n", yaw);
-    display.printf("err: %f\n", yaw - yaw_target);
+    display.setTextSize(2);
+    // display.printf("yaw: %f\n", yaw);
+    // display.printf("err: %f\n", yaw - yaw_target);
     display.printf("cnt: %d\n", cross_cnt);
-    display.printf("tx:%d\n", is_start_detect);
-    display.printf("is_real:%d\n", is_real_flag);
-    display.printf("rx_length:%d\n", rx_length);
-    display.printf("rx_char:%d\n", rx_char);
+    // display.printf("tx:%d\n", is_start_detect);
+    // display.printf("is_real:%d\n", is_real_flag);
+    display.printf("mode:%d", GetLine());
     display.println(stateNames[robot_state]);
     display.display();
 
     // 状态改变
-    if (is_stop_flag >= 3)
+    if (is_stop_flag)
     {
+        led_on();
         robot_state = DETECT_STATE;
+        stop_start_time = millis();
     }
 
     switch (robot_state)
     {
     case INIT_STATE:
-
+        led_on();
         if (GetLine() != 0 && GetLine() != 0b11111) // 任意一个传感器检测到黑，启动
         {
             robot_state = FOLLOW_LINE;
@@ -366,29 +367,36 @@ void loop()
         break;
 
     case FOLLOW_LINE:
+        led_off();
         tracing();
         break;
     case DETECT_STATE:
-        SetSpeed(0, 0, 0);
-        if (is_real_flag)
+        if (millis() - stop_start_time < 500)
         {
-            robot_state = STRIKE_STATE;
-            is_stop_flag = 0;
+            SetSpeed(0, 0, 0);
         }
         else
         {
-            robot_state = TURN_180;
-            yaw_target = yaw + 180;
+            if (is_real_flag)
+            {
+                robot_state = STRIKE_STATE;
+            }
+            else
+            {
+                robot_state = TURN_180;
+                yaw_target = yaw + 180;
+            }
         }
+
         break;
     case STRIKE_STATE:
         if (millis() - strike_start_time < 700)
         {
-            SetSpeed(100, 0, 0);
+            SetSpeed(80, 0, 0);
         }
         else if (millis() - strike_start_time < 1400)
         {
-            SetSpeed(-100, 0, 0);
+            SetSpeed(-80, 0, 0);
         }
         else
         {
@@ -405,36 +413,55 @@ void loop()
         else
         {
             SetSpeed(0, 0, 0);
+            straight_speed = 100;
             is_real_flag = 0;
+            is_stop_flag = 0;
             robot_state = FOLLOW_LINE;
         }
         break;
 
     case SLOW_STRAIGHT_BEFORE_TURN:
-        if (millis() - start_time < 290)
-        {
-            SetSpeed(100, 0, 0);
-        }
-        else if (millis() - start_time < 330)
+        if (millis() - start_time < 300)
         {
             SetSpeed(0, 0, 0);
         }
+        else if (millis() - start_time < 550)
+        {
+            led_on();
+            SetSpeed(80, 0, 0);
+        }
         else
         {
-            robot_state = TURN_STATE;
-            rotate_yaw.pid_reset();
+            if (the_way_arr[cross_cnt] == 1)
+            {
+                robot_state = FOLLOW_LINE;
+            }
+            if (the_way_arr[cross_cnt] == 2)
+            {
+                yaw_target = yaw - 90;
+                robot_state = TURN_STATE;
+                rotate_yaw.pid_reset();
+            }
+            else if (the_way_arr[cross_cnt] == 4)
+            {
+                yaw_target = yaw + 90;
+                robot_state = TURN_STATE;
+                rotate_yaw.pid_reset();
+            }
+            cross_cnt++;
         }
         break;
     case TURN_STATE:
         int output = (int)(rotate_yaw.compute(yaw, yaw_target));
 
-        if (fabs(yaw - yaw_target) > 5)
+        if (fabs(yaw - yaw_target) > 5 && (((1<<2) & GetLine())!=(1<<2))) //&& (((1<<2) & GetLine())!=(1<<2))
         {
             SetSpeed(0, 0, -output);
         }
         else
         {
             SetSpeed(0, 0, 0);
+            last_trace_num=0b00100; //直行
             robot_state = FOLLOW_LINE;
         }
         break;
@@ -583,36 +610,22 @@ uint8_t GetLine(void)
 }
 void tracing(void)
 {
-    static uint8_t trace_num = 15;
-    static uint8_t last_trace_num = 15;
+
     float current_yaw = 0.0;
 
-    last_trace_num = trace_num;
     trace_num = GetLine();
 
     if (((1 & trace_num) == 1) || (((1 << 4) & trace_num) == (1 << 4)))
     {
 
-#ifdef MPU6050_LOOP
-
-        // if (the_way_arr[cross_cnt + 1] == 3)
+        // if (the_way_arr[cross_cnt + 1] == 3) //下一次要掉头
         // {
-        //     is_start_detect = 1;
+        //     straight_speed = 33;
         // }
 
         robot_state = SLOW_STRAIGHT_BEFORE_TURN;
-        if (the_way_arr[cross_cnt] == 2)
-        {
-            yaw_target = yaw - 90;
-        }
-        else if (the_way_arr[cross_cnt] == 4)
-        {
-            yaw_target = yaw + 90;
-        }
-        cross_cnt++;
         start_time = millis();
         return;
-#endif
         // display.clearDisplay();
 
         // display.setTextSize(2);
@@ -663,24 +676,29 @@ void tracing(void)
     }
     else
     {
+        if(trace_num==0)
+        {
+            trace_num=last_trace_num;
+        }
         switch (trace_num)
         {
 
-        case 0b00000:
+         //case 0b00000:
         case 0b00100:
-            SetSpeed(100, 0, 0); // go straight
+            SetSpeed(80, 0, 0); // go straight
             break;
         case 0b00110:
         case 0b00010:
-            SetSpeed(20, 0, 600); // turn right
+            SetSpeed(10, 0, 500); // turn right
             break;
         case 0b01100:
         case 0b01000:
-            SetSpeed(20, 0, -600); // turn left
+            SetSpeed(10, 0, -500); // turn left
             break;
         default:
             SetSpeed(0, 0, 0);
         }
+         last_trace_num = trace_num;
     }
 }
 /*
