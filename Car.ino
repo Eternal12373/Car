@@ -70,18 +70,20 @@ enum
     DETECT_STATE,
     STRIKE_STATE,
     TURN_180,
+    DELAY_FOLLOW_LINE,
     STATE_COUNT,
 };
 
 const char *stateNames[STATE_COUNT] =
     {
-        "INIT_STATE",
-        "FOLLOW_LINE",
-        "TURN_STATE",
-        "SLOW_STRAIGHT",
-        "DETECT_STATE",
-        "STRIKE_STATE",
-        "TURN_180",
+        "INIT",
+        "FOLLOW",
+        "TURN",
+        "SLOW",
+        "DETECT",
+        "STRIKE",
+        "TURN180",
+        "DELAY",
 };
 uint8_t trace_num = 15;
 uint8_t last_trace_num = 15;
@@ -100,8 +102,11 @@ int straight_speed = 100;
 unsigned long start_time = 0;
 unsigned long current_time = 0;
 unsigned long stop_start_time = 0;
-
+unsigned long turn90_start_time = 0;
+unsigned long turn180_start_time = 0;
 unsigned long strike_start_time = 0;
+unsigned long delay_follow_start_time = 0;
+
 unsigned long strike_current_time = 0;
 
 PIDController rotate_yaw(40, 0.5, 0, 400, 1300);
@@ -136,8 +141,8 @@ MPU6050 mpu6050(Wire);
 /**
  * @brief 超声波接口定义
  */
-// #define IO_TRIG 23
-// #define IO_ECHO 25
+#define IO_TRIG 12
+#define IO_ECHO 25
 
 /*-----OLED Definition-------*/
 #define SCREEN_WIDTH 128
@@ -186,9 +191,9 @@ void MotorInit(void);
 void SetDirectionAndSpeed(int speed1, int speed2, int speed3, int speed4);
 void SetSpeed(float vx_set, float vy_set, float wz_set);
 /**
- * @brief 超声波引脚初始化1111
+ * @brief 超声波引脚初始化
  */
-// void UltrasonicInit(void);
+void UltrasonicInit(void);
 /**
  * @brief 超声波测距
  *
@@ -222,17 +227,21 @@ uint8_t rx_char = 0;
 4   2
   3
 */
+// uint8_t the_way_arr[128] = {0};
 uint8_t the_way_arr[128] = {4, 4, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
-// uint8_t the_way_arr[128] = {4, 3, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
+//  uint8_t the_way_arr[128] = {4, 3, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
 
 int cross_cnt = 0; // 经过路口的数量，索引
 
 int rx_cnt = 0;
 int rx_finish = 0;
+int err_time = 0;
+int err_flag = 0;
 void serialEvent()
 {
     // Serial.println("serialEvent");
     // Serial.println(Serial.available());
+    err_time = 0;
     if (robot_state == INIT_STATE)
     {
         while (Serial.available())
@@ -253,7 +262,7 @@ void serialEvent()
                     // }
                     break;
                 }
-                rx_buff[rx_cnt - 1] = (int)(incomingChar - '0');
+                the_way_arr[rx_cnt - 1] = incomingChar;
                 rx_cnt++;
             }
             if (rx_cnt == 0)
@@ -269,17 +278,20 @@ void serialEvent()
     {
         while (Serial.available())
         {
+            rx_char = Serial.read();
 
-            if (!is_stop_flag)
+            // if (robot_state != DETECT_STATE)
+            // {
+            //     if (rx_char == 2 && the_way_arr[cross_cnt] == 3)
+            //     {
+            //         is_stop_flag++;
+            //     }
+            // }
+
+            // if (robot_state == DETECT_STATE)
+            if (the_way_arr[cross_cnt] == 3)
             {
-                if (Serial.read() == 2)
-                {
-                    is_stop_flag++;
-                }
-            }
-            else
-            {
-                if (Serial.read() == 1)
+                if (rx_char == 1)
                 {
                     is_real_flag = 1;
                 }
@@ -290,6 +302,7 @@ void serialEvent()
 
 void setup()
 {
+    pinMode(2, OUTPUT);
     Serial.begin(9600);
     Wire.begin();
     delay(1000);
@@ -299,6 +312,7 @@ void setup()
     /**各种外设初始化**/
     MotorInit();
     LineInit();
+    UltrasonicInit();
 
     if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
     {
@@ -321,45 +335,73 @@ void setup()
     led_off();
 }
 
+int count_flag = 0;
+float dis_sum = 0.0;
 void loop()
 {
     delay(2);
+    if (err_time < 3000)
+    {
+        err_time++;
+    }
     mpu6050.update();
-
-    // if(rx_finish)
-    // {
-    //     for(int i=0;i<128;i++)
-    //     {
-    //         Serial.print(rx_buff[i]);
-    //     }
-    // }
 
     yaw = mpu6050.getAngleZ();
 
+    duration = UltrasonicDistence();
+    if (count_flag <= 5)
+    {
+        count_flag++;
+        dis_sum += duration * 0.034 / 2;
+        if (count_flag == 5)
+        {
+            distance = dis_sum / 5;
+            count_flag = 0;
+            dis_sum = 0.0;
+        }
+    }
+
+    // if (rx_finish)
+    // {
+    //     for (int i = 0; i < rx_length; i++)
+    //     {
+    //         display.clearDisplay();
+    //         display.setCursor(0, 0);
+    //         display.setTextSize(2);
+    //         display.printf("i:%d\n", i);
+    //         display.printf("%d", the_way_arr[i]);
+    //         display.display();
+    //         delay(800);
+    //     }
+    //     rx_finish=0;
+    // }
     display.clearDisplay();
     display.setCursor(0, 0);
     display.setTextSize(2);
     // display.printf("yaw: %f\n", yaw);
     // display.printf("err: %f\n", yaw - yaw_target);
-    display.printf("cnt: %d\n", cross_cnt);
+    // display.printf("cnt: %d\n", cross_cnt);
     // display.printf("tx:%d\n", is_start_detect);
-    // display.printf("is_real:%d\n", is_real_flag);
-    display.printf("mode:%d", GetLine());
-    display.println(stateNames[robot_state]);
+    display.printf("is_real:%d\n", is_real_flag);
+    // display.printf("is_stop:%d\n", is_stop_flag);
+    display.printf("char:%d\n", rx_char);
+
+    // display.printf("distance:%f\n", distance);
+    // display.printf("turn_dir:%d\n", the_way_arr[cross_cnt]);
+    // display.printf("mode:%d", GetLine());
+    // display.println(stateNames[robot_state]);
+    if (err_time > 2000)
+    {
+        display.printf("Dumped!!!\n");
+    }
     display.display();
 
     // 状态改变
-    if (is_stop_flag)
-    {
-        led_on();
-        robot_state = DETECT_STATE;
-        stop_start_time = millis();
-    }
 
     switch (robot_state)
     {
     case INIT_STATE:
-        led_on();
+        // led_on();
         if (GetLine() != 0 && GetLine() != 0b11111) // 任意一个传感器检测到黑，启动
         {
             robot_state = FOLLOW_LINE;
@@ -367,7 +409,17 @@ void loop()
         break;
 
     case FOLLOW_LINE:
-        led_off();
+        // led_off();
+        if (distance <= 43 && distance >= 1 && the_way_arr[cross_cnt] == 3)
+        {
+            is_stop_flag = 1;
+        }
+        if (is_stop_flag)
+        {
+            led_on();
+            robot_state = DETECT_STATE;
+            stop_start_time = millis();
+        }
         tracing();
         break;
     case DETECT_STATE:
@@ -379,11 +431,13 @@ void loop()
         {
             if (is_real_flag)
             {
+                strike_start_time = millis();
                 robot_state = STRIKE_STATE;
             }
             else
             {
                 robot_state = TURN_180;
+                turn180_start_time = millis();
                 yaw_target = yaw + 180;
             }
         }
@@ -394,40 +448,52 @@ void loop()
         {
             SetSpeed(80, 0, 0);
         }
-        else if (millis() - strike_start_time < 1400)
+        else if (millis() - strike_start_time < 1200)
         {
             SetSpeed(-80, 0, 0);
         }
         else
         {
+            turn180_start_time = millis();
             robot_state = TURN_180;
             yaw_target = yaw + 180;
         }
         break;
 
     case TURN_180:
-        if (fabs(yaw - yaw_target) > 5)
+    {
+        int output_180 = rotate_yaw.compute(yaw, yaw_target);
+        if (millis() - turn180_start_time < 300)
         {
-            SetSpeed(0, 0, -rotate_yaw.compute(yaw, yaw_target));
+            SetSpeed(0, 0, 0);
+        }
+        else if (millis() - turn180_start_time < 800)
+        {
+            SetSpeed(0, 0, -output_180);
+        }
+        else if (fabs(yaw - yaw_target) > 5 && (((1 << 2) & GetLine()) != (1 << 2)))
+        {
+            SetSpeed(0, 0, -output_180);
         }
         else
         {
+            cross_cnt++;
             SetSpeed(0, 0, 0);
-            straight_speed = 100;
             is_real_flag = 0;
             is_stop_flag = 0;
             robot_state = FOLLOW_LINE;
+            last_trace_num = 0b00100; // 保证直行
         }
         break;
-
+    }
     case SLOW_STRAIGHT_BEFORE_TURN:
         if (millis() - start_time < 300)
         {
             SetSpeed(0, 0, 0);
         }
-        else if (millis() - start_time < 550)
+        else if (millis() - start_time < 560)
         {
-            led_on();
+            // led_on();
             SetSpeed(80, 0, 0);
         }
         else
@@ -440,31 +506,60 @@ void loop()
             {
                 yaw_target = yaw - 90;
                 robot_state = TURN_STATE;
+                turn90_start_time = millis();
                 rotate_yaw.pid_reset();
             }
             else if (the_way_arr[cross_cnt] == 4)
             {
                 yaw_target = yaw + 90;
                 robot_state = TURN_STATE;
+                turn90_start_time = millis();
                 rotate_yaw.pid_reset();
             }
             cross_cnt++;
         }
         break;
+    case DELAY_FOLLOW_LINE:
+        if (millis() - delay_follow_start_time < 1000)
+        {
+            tracing();
+        }
+        else
+        {
+            robot_state = FOLLOW_LINE;
+        }
+        break;
     case TURN_STATE:
+    {
+        if (the_way_arr[cross_cnt] == 3)
+        {
+            is_stop_flag = 0;
+        }
         int output = (int)(rotate_yaw.compute(yaw, yaw_target));
-
-        if (fabs(yaw - yaw_target) > 5 && (((1<<2) & GetLine())!=(1<<2))) //&& (((1<<2) & GetLine())!=(1<<2))
+        if (millis() - turn90_start_time < 300)
+        {
+            SetSpeed(0, 0, -output);
+        }
+        else if (fabs(yaw - yaw_target) > 5 && (((1 << 2) & GetLine()) != (1 << 2))) //&& (((1<<2) & GetLine())!=(1<<2))
         {
             SetSpeed(0, 0, -output);
         }
         else
         {
             SetSpeed(0, 0, 0);
-            last_trace_num=0b00100; //直行
-            robot_state = FOLLOW_LINE;
+            last_trace_num = 0b00100; // 直行
+            if (the_way_arr[cross_cnt] == 3)
+            {
+                robot_state = DELAY_FOLLOW_LINE;
+                delay_follow_start_time = millis();
+            }
+            else
+            {
+                robot_state = FOLLOW_LINE;
+            }
         }
         break;
+    }
     }
 
     // for (int i = 0; i < 128; i++)
@@ -567,18 +662,18 @@ void SetDirectionAndSpeed(int speed1, int speed2, int speed3, int speed4)
     }
 }
 
-// void UltrasonicInit(void)
-// {
-//     pinMode(IO_TRIG, OUTPUT);
-//     pinMode(IO_ECHO, INPUT);
-// }
-// int UltrasonicDistence(void)
-// {
-//     digitalWrite(IO_TRIG, HIGH);
-//     delayMicroseconds(10);
-//     digitalWrite(IO_TRIG, LOW);
-//     return pulseIn(IO_ECHO, HIGH);
-// }
+void UltrasonicInit(void)
+{
+    pinMode(IO_TRIG, OUTPUT);
+    pinMode(IO_ECHO, INPUT);
+}
+int UltrasonicDistence(void)
+{
+    digitalWrite(IO_TRIG, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(IO_TRIG, LOW);
+    return pulseIn(IO_ECHO, HIGH);
+}
 void LineInit(void)
 {
     pinMode(IO_X1, INPUT);
@@ -602,10 +697,8 @@ uint8_t GetLine(void)
     x3 = digitalRead(IO_X3);
     x4 = digitalRead(IO_X4); // 黑线为0 白线为1
     x5 = digitalRead(IO_X5);
-    // Serial.printf("x1: %d, x2: %d, x3: %d, x4: %d\n", x1, x2, x3, x4);
 
     tmp = (x1 << 4) | (x2 << 3) | (x3 << 2) | (x4 << 1) | x5;
-    // tmp = x2 | (x1 << 1) | (x3 << 2) | (x4 << 3);
     return tmp;
 }
 void tracing(void)
@@ -676,16 +769,19 @@ void tracing(void)
     }
     else
     {
-        if(trace_num==0)
+        if (trace_num == 0)
         {
-            trace_num=last_trace_num;
+            trace_num = last_trace_num;
         }
         switch (trace_num)
         {
 
-         //case 0b00000:
+            // case 0b00000:
         case 0b00100:
-            SetSpeed(80, 0, 0); // go straight
+            if (the_way_arr[cross_cnt] == 3)
+                SetSpeed(35, 0, 0); // go straight
+            else
+                SetSpeed(80, 0, 0); // go straight
             break;
         case 0b00110:
         case 0b00010:
@@ -698,7 +794,7 @@ void tracing(void)
         default:
             SetSpeed(0, 0, 0);
         }
-         last_trace_num = trace_num;
+        last_trace_num = trace_num;
     }
 }
 /*
