@@ -402,7 +402,7 @@ void loop()
     {
     case INIT_STATE:
         // led_on();
-        if (GetLine() != 0 && GetLine() != 0b11111) // 任意一个传感器检测到黑，启动
+        if (GetLine()==0b00100) // 任意一个传感器检测到黑，启动
         {
             robot_state = FOLLOW_LINE;
         }
