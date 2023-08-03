@@ -227,10 +227,10 @@ uint8_t rx_char = 0;
 4   2
   3
 */
-// uint8_t the_way_arr[128] = {0};
-uint8_t the_way_arr[128] = {4, 4, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
+//uint8_t the_way_arr[128] = {0};
+//uint8_t the_way_arr[128] = {4, 4, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
 //  uint8_t the_way_arr[128] = {4, 3, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
-
+uint8_t the_way_arr[128]={4, 4, 2, 2, 4, 2, 4, 2, 1, 2, 2, 3, 4, 1, 2, 4, 4, 2, 1, 4, 2, 2, 2, 3, 4, 4, 2, 2, 4, 1, 4, 3, 4, 4, 3, 2, 1, 2, 2, 4, 2, 4, 2, 4, 1, 3, 1, 2, 4, 2, 2, 2, 3, 4, 2, 2, 4, 3, 4, 1, 2, 4, 4, 2, 1, 4, 2, 2, 2, 3, 4, 4, 2, 2, 4, 1, 1, 4, 3, 2, 2, 3, 2, 2, 2, 4, 1, 2, 3, 4, 4, 4, 2, 4, 1, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2};
 int cross_cnt = 0; // 经过路口的数量，索引
 
 int rx_cnt = 0;
@@ -340,10 +340,10 @@ float dis_sum = 0.0;
 void loop()
 {
     delay(2);
-    if (err_time < 3000)
-    {
-        err_time++;
-    }
+    // if (err_time < 3000)
+    // {
+    //     // err_time++;
+    // }
     mpu6050.update();
 
     yaw = mpu6050.getAngleZ();
@@ -371,30 +371,33 @@ void loop()
     //         display.printf("i:%d\n", i);
     //         display.printf("%d", the_way_arr[i]);
     //         display.display();
-    //         delay(800);
+    //         delay(1000);
     //     }
-    //     rx_finish=0;
+    //     rx_finish = 0;
     // }
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.setTextSize(2);
-    // display.printf("yaw: %f\n", yaw);
-    // display.printf("err: %f\n", yaw - yaw_target);
-    // display.printf("cnt: %d\n", cross_cnt);
-    // display.printf("tx:%d\n", is_start_detect);
-    display.printf("is_real:%d\n", is_real_flag);
-    // display.printf("is_stop:%d\n", is_stop_flag);
-    display.printf("char:%d\n", rx_char);
-
-    // display.printf("distance:%f\n", distance);
-    // display.printf("turn_dir:%d\n", the_way_arr[cross_cnt]);
-    // display.printf("mode:%d", GetLine());
-    // display.println(stateNames[robot_state]);
-    if (err_time > 2000)
-    {
-        display.printf("Dumped!!!\n");
-    }
-    display.display();
+        display.clearDisplay();
+        display.setCursor(0, 0);
+        display.setTextSize(2);
+        // display.printf("yaw: %f\n", yaw);
+        // display.printf("err: %f\n", yaw - yaw_target);
+        // display.printf("cnt: %d\n", cross_cnt);
+        // display.printf("tx:%d\n", is_start_detect);
+        // display.printf("is_real:%d\n", is_real_flag);
+        // display.printf("is_stop:%d\n", is_stop_flag);
+        display.printf("char:%d\n", rx_char);
+        // display.printf("rx_cnt%d\n", rx_cnt);
+        // display.printf("err%d\n",err_time);
+        display.printf("is_finish%d\n",rx_finish);
+        // display.printf("distance:%f\n", distance);
+        // display.printf("turn_dir:%d\n", the_way_arr[cross_cnt]);
+        // display.printf("mode:%d", GetLine());
+        // display.println(stateNames[robot_state]);
+        // if (err_time > 2000)
+        // {
+        //     display.printf("Dumped!!!\n");
+        // }
+        display.display();
+    
 
     // 状态改变
 
@@ -402,7 +405,7 @@ void loop()
     {
     case INIT_STATE:
         // led_on();
-        if (GetLine()==0b00100) // 任意一个传感器检测到黑，启动
+        if (GetLine() == 0b00100) // 任意一个传感器检测到黑，启动
         {
             robot_state = FOLLOW_LINE;
         }
