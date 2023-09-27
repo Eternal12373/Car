@@ -9,7 +9,7 @@
 #define led_off() digitalWrite(2, HIGH)
 
 /*---------config---------*/
-// #define STOP_DEBUG
+//#define STOP_DEBUG
 #define MPU6050_LOOP
 
 class PIDController
@@ -227,10 +227,10 @@ uint8_t rx_char = 0;
 4   2
   3
 */
-//uint8_t the_way_arr[128] = {0};
-//uint8_t the_way_arr[128] = {4, 4, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
-//  uint8_t the_way_arr[128] = {4, 3, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
-uint8_t the_way_arr[128]={4, 4, 2, 2, 4, 2, 4, 2, 1, 2, 2, 3, 4, 1, 2, 4, 4, 2, 1, 4, 2, 2, 2, 3, 4, 4, 2, 2, 4, 1, 4, 3, 4, 4, 3, 2, 1, 2, 2, 4, 2, 4, 2, 4, 1, 3, 1, 2, 4, 2, 2, 2, 3, 4, 2, 2, 4, 3, 4, 1, 2, 4, 4, 2, 1, 4, 2, 2, 2, 3, 4, 4, 2, 2, 4, 1, 1, 4, 3, 2, 2, 3, 2, 2, 2, 4, 1, 2, 3, 4, 4, 4, 2, 4, 1, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2};
+// uint8_t the_way_arr[128] = {0};
+// uint8_t the_way_arr[128] = {4, 4, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
+//   uint8_t the_way_arr[128] = {4, 3, 2, 2, 4, 2, 1, 2, 4, 2, 1, 4, 1, 1, 4, 3, 2, 1, 2, 2, 4, 4, 2, 4, 3, 4, 1, 4, 2, 2, 3, 2, 4, 4, 2, 3, 4, 2, 2, 1, 4, 2, 1, 1, 4, 4, 2, 3, 4, 2, 2, 1, 4, 1, 1, 4, 3, 1, 2, 4, 2, 4, 2, 4, 4, 1, 4, 3, 2, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 4, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2}; // 判断方向的数组
+uint8_t the_way_arr[128] = {4, 4, 2, 2, 4, 2, 4, 2, 1, 2, 2, 3, 4, 1, 2, 4, 4, 2, 1, 4, 2, 2, 2, 3, 4, 4, 2, 2, 4, 1, 4, 3, 4, 4, 3, 2, 1, 2, 2, 4, 2, 4, 2, 4, 1, 3, 1, 2, 4, 2, 2, 2, 3, 4, 2, 2, 4, 3, 4, 1, 2, 4, 4, 2, 1, 4, 2, 2, 2, 3, 4, 4, 2, 2, 4, 1, 1, 4, 3, 2, 2, 3, 2, 2, 2, 4, 1, 2, 3, 4, 4, 4, 2, 4, 1, 3, 2, 2, 2, 4, 2, 4, 4, 2, 2};
 int cross_cnt = 0; // 经过路口的数量，索引
 
 int rx_cnt = 0;
@@ -375,29 +375,28 @@ void loop()
     //     }
     //     rx_finish = 0;
     // }
-        display.clearDisplay();
-        display.setCursor(0, 0);
-        display.setTextSize(2);
-        // display.printf("yaw: %f\n", yaw);
-        // display.printf("err: %f\n", yaw - yaw_target);
-        // display.printf("cnt: %d\n", cross_cnt);
-        // display.printf("tx:%d\n", is_start_detect);
-        // display.printf("is_real:%d\n", is_real_flag);
-        // display.printf("is_stop:%d\n", is_stop_flag);
-        display.printf("char:%d\n", rx_char);
-        // display.printf("rx_cnt%d\n", rx_cnt);
-        // display.printf("err%d\n",err_time);
-        display.printf("is_finish%d\n",rx_finish);
-        // display.printf("distance:%f\n", distance);
-        // display.printf("turn_dir:%d\n", the_way_arr[cross_cnt]);
-        // display.printf("mode:%d", GetLine());
-        // display.println(stateNames[robot_state]);
-        // if (err_time > 2000)
-        // {
-        //     display.printf("Dumped!!!\n");
-        // }
-        display.display();
-    
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.setTextSize(2);
+    // display.printf("yaw: %f\n", yaw);
+    // display.printf("err: %f\n", yaw - yaw_target);
+    // display.printf("cnt: %d\n", cross_cnt);
+    // display.printf("tx:%d\n", is_start_detect);
+    // display.printf("is_real:%d\n", is_real_flag);
+    // display.printf("is_stop:%d\n", is_stop_flag);
+    display.printf("char:%d\n", rx_char);
+    // display.printf("rx_cnt%d\n", rx_cnt);
+    // display.printf("err%d\n",err_time);
+    display.printf("is_finish%d\n", rx_finish);
+    // display.printf("distance:%f\n", distance);
+    // display.printf("turn_dir:%d\n", the_way_arr[cross_cnt]);
+    // display.printf("mode:%d", GetLine());
+    // display.println(stateNames[robot_state]);
+    // if (err_time > 2000)
+    // {
+    //     display.printf("Dumped!!!\n");
+    // }
+    display.display();
 
     // 状态改变
 
@@ -490,11 +489,11 @@ void loop()
         break;
     }
     case SLOW_STRAIGHT_BEFORE_TURN:
-        if (millis() - start_time < 300)
+        if (millis() - start_time < 200)
         {
             SetSpeed(0, 0, 0);
         }
-        else if (millis() - start_time < 560)
+        else if (millis() - start_time < 380)
         {
             // led_on();
             SetSpeed(80, 0, 0);
@@ -784,15 +783,29 @@ void tracing(void)
             if (the_way_arr[cross_cnt] == 3)
                 SetSpeed(35, 0, 0); // go straight
             else
-                SetSpeed(80, 0, 0); // go straight
+                SetSpeed(98, 0, 0); // go straight 110
             break;
         case 0b00110:
         case 0b00010:
-            SetSpeed(10, 0, 500); // turn right
+            if (the_way_arr[cross_cnt] == 3)
+            {
+                SetSpeed(5, 0, 500); // turn right 500
+            }
+            else
+            {
+                SetSpeed(30, 0, 380);
+            }
             break;
         case 0b01100:
         case 0b01000:
-            SetSpeed(10, 0, -500); // turn left
+            if (the_way_arr[cross_cnt] == 3)
+            {
+                SetSpeed(5, 0, -500); // turn left 500
+            }
+            else
+            {
+                SetSpeed(30, 0, -380);
+            }
             break;
         default:
             SetSpeed(0, 0, 0);
